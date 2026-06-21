@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.DS_Store
+*.db
+audio_uploads/
+merged_videos/
+sign_videos/
+*.mp4
+*.wav
+.git
+node_modules/

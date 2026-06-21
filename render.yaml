@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: signbridge
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && python -m spacy download en_core_web_sm
+    startCommand: gunicorn app:app
+    envVars:
+      - key: MONGODB_URI
+        fromService:
+          name: signbridge
+          property: MONGODB_URI
+      - key: SUPABASE_URL
+        fromService:
+          name: signbridge
+          property: SUPABASE_URL
+      - key: SUPABASE_KEY
+        fromService:
+          name: signbridge
+          property: SUPABASE_KEY
+      - key: FLASK_ENV
+        value: production
