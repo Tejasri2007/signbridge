@@ -11,7 +11,6 @@ try:
 except:
     WHISPER_AVAILABLE = False
     print("Warning: Whisper not available. Speech-to-sign conversion will use mock data.")
-import spacy
 import os
 import subprocess
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -44,7 +43,6 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 model = None
-nlp = spacy.load("en_core_web_sm")
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -98,13 +96,10 @@ os.makedirs(AUDIO_FOLDER, exist_ok=True)
 os.makedirs(MERGED_FOLDER, exist_ok=True)
 
 def convert_to_sign(text):
-    doc = nlp(text)
-    words = []
-    for token in doc:
-        if token.is_punct:
-            continue
-        if token.pos_ not in ["AUX", "DET", "ADP"]:
-            words.append(token.lemma_.upper() if token.pos_ == "VERB" else token.text.upper())
+    # Simple word extraction without spacy
+    words = text.upper().split()
+    # Remove punctuation
+    words = [w.strip('.,!?;:"\'-') for w in words if w.strip('.,!?;:"\'-')]
     return words
 
 @app.route('/')
