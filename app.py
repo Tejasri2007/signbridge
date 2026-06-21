@@ -11,7 +11,8 @@ try:
 except:
     WHISPER_AVAILABLE = False
     print("Warning: Whisper not available. Speech-to-sign conversion will use mock data.")
-import os
+
+from supabase import create_client
 import subprocess
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
@@ -37,6 +38,24 @@ try:
     print("✅ MongoDB Atlas Connected Successfully!")
 except Exception as e:
     print(f"❌ MongoDB Connection Error: {e}")
+
+# Supabase Connection
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip()
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '').strip()
+SUPABASE_BUCKET = 'sign-videos'
+
+supabase = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase Connected Successfully!")
+    except Exception as e:
+        print(f"⚠️  Supabase Connection Error: {str(e)[:100]}")
+        print("   Videos will be served from local storage")
+        supabase = None
+else:
+    print("⚠️  Supabase credentials not configured")
+    print("   Videos will be served from local storage")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -86,6 +105,22 @@ def load_whisper_model():
             print("Warning: Could not load Whisper model")
             return None
     return model
+
+def get_video_url(word, source='animations'):
+    """Get video URL from Supabase or local fallback"""
+    if supabase:
+        try:
+            url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(f'{source}/{word}.mp4')
+            return url
+        except:
+            pass
+    # Fallback to local
+    if source == 'animations':
+        return url_for('serve_animation', filename=f'{word}.mp4')
+    elif source == 'learning':
+        return url_for('serve_learning_video', filename=f'{word}.mp4')
+    else:
+        return url_for('serve_video', filename=f'{word}.mp4')
 
 UPLOAD_FOLDER = 'sign_videos'
 ANIMATION_FOLDER = 'archive/INDIAN SIGN LANGUAGE ANIMATED VIDEOS'
@@ -367,6 +402,12 @@ def get_videos():
 
 @app.route('/sign_videos/<filename>')
 def serve_video(filename):
+    if supabase:
+        try:
+            url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(f'uploads/{filename}')
+            return redirect(url)
+        except:
+            pass
     return send_from_directory(UPLOAD_FOLDER, filename)
 
 @app.route('/audio_uploads/<filename>')
@@ -375,6 +416,12 @@ def serve_audio(filename):
 
 @app.route('/animations/<path:filename>')
 def serve_animation(filename):
+    if supabase:
+        try:
+            url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(f'animations/{filename}')
+            return redirect(url)
+        except:
+            pass
     return send_from_directory(ANIMATION_FOLDER, filename)
 
 @app.route('/merge_videos', methods=['POST'])
@@ -475,6 +522,12 @@ def download_with_caption(word):
 
 @app.route('/learning_videos/<filename>')
 def serve_learning_video(filename):
+    if supabase:
+        try:
+            url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(f'learning/{filename}')
+            return redirect(url)
+        except:
+            pass
     video_path = os.path.join('learning', 'Animation_video')
     if not os.path.exists(os.path.join(video_path, filename)):
         return jsonify({'error': 'Video not found'}), 404
