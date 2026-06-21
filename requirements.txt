@@ -1,7 +1,7 @@
 flask==3.0.0
 openai-whisper==20250625
 requests==2.32.5
-spacy==3.8.14
+spacy==3.8.13
 flask-login==0.6.3
 flask-sqlalchemy==3.1.1
 reportlab==4.0.9
