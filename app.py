@@ -35,9 +35,9 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-signbrid
 mongo_uri = os.environ.get('MONGODB_URI', 'mongodb+srv://Tejasri:Teja2007@mobilerecharge.raj1zpx.mongodb.net/signbridge?retryWrites=true&w=majority')
 try:
     connect('signbridge', host=mongo_uri)
-    print("✅ MongoDB Atlas Connected Successfully!")
+    print("[OK] MongoDB Atlas Connected Successfully!")
 except Exception as e:
-    print(f"❌ MongoDB Connection Error: {e}")
+    print(f"[ERROR] MongoDB Connection Error: {e}")
 
 # Supabase Connection
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip()
@@ -48,13 +48,13 @@ supabase = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("✅ Supabase Connected Successfully!")
+        print("[OK] Supabase Connected Successfully!")
     except Exception as e:
-        print(f"⚠️  Supabase Connection Error: {str(e)[:100]}")
+        print(f"[WARNING] Supabase Connection Error: {str(e)[:100]}")
         print("   Videos will be served from local storage")
         supabase = None
 else:
-    print("⚠️  Supabase credentials not configured")
+    print("[WARNING] Supabase credentials not configured")
     print("   Videos will be served from local storage")
 
 login_manager = LoginManager()
@@ -255,17 +255,21 @@ def parent_dashboard():
 @login_required
 @role_required('admin')
 def admin_dashboard():
-    users = list(User.objects())
-    parents = list(User.objects(role='parent'))
-    stats = {
-        'total_students': len(list(User.objects(role='student'))),
-        'total_teachers': len(list(User.objects(role='teacher'))),
-        'total_parents': len(list(User.objects(role='parent'))),
-        'active_users': len(list(User.objects(is_active=True)))
-    }
-    recent_logs = list(UserLog.objects().order_by('-timestamp')[:20])
-    all_progress = list(Progress.objects().order_by('-timestamp')[:100])
-    return render_template('admin_dashboard.html', users=users, parents=parents, stats=stats, recent_logs=recent_logs, all_progress=all_progress)
+    try:
+        users = list(User.objects())
+        parents = list(User.objects(role='parent'))
+        stats = {
+            'total_students': User.objects(role='student').count(),
+            'total_teachers': User.objects(role='teacher').count(),
+            'total_parents': User.objects(role='parent').count(),
+            'active_users': User.objects(is_active=True).count()
+        }
+        recent_logs = list(UserLog.objects().order_by('-timestamp')[:20])
+        all_progress = list(Progress.objects().order_by('-timestamp')[:100])
+        return render_template('admin_dashboard.html', users=users, parents=parents, stats=stats, recent_logs=recent_logs, all_progress=all_progress)
+    except Exception as e:
+        print(f"Admin dashboard error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/learning')
 @login_required
@@ -568,40 +572,40 @@ def teacher_upload_video():
             title=title,
             type='video',
             video_path=filename,
-            teacher_id=current_user.id
+            teacher_id=str(current_user.id)
         )
-        db.session.add(assignment)
-        db.session.commit()
+        assignment.save()
         
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/teacher/delete_video/<int:video_id>', methods=['DELETE'])
+@app.route('/teacher/delete_video/<video_id>', methods=['DELETE'])
 @login_required
 @role_required('teacher')
 def teacher_delete_video(video_id):
     try:
-        video = Assignment.query.get(video_id)
-        if not video or video.teacher_id != current_user.id:
+        video = Assignment.objects(id=video_id).first()
+        if not video or str(video.teacher_id) != str(current_user.id):
             return jsonify({'error': 'Video not found'}), 404
         
         video_path = os.path.join(UPLOAD_FOLDER, video.video_path)
         if os.path.exists(video_path):
             os.remove(video_path)
         
-        db.session.delete(video)
-        db.session.commit()
+        video.delete()
         
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/student/video/<int:video_id>')
+@app.route('/student/video/<video_id>')
 @login_required
 @role_required('student')
 def student_view_video(video_id):
-    video = Assignment.query.get_or_404(video_id)
+    video = Assignment.objects(id=video_id).first()
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
     return render_template('video_player.html', video=video)
 
 # Admin Routes
@@ -609,98 +613,119 @@ def student_view_video(video_id):
 @login_required
 @role_required('admin')
 def admin_add_user():
-    data = request.get_json()
-    user = User(
-        username=data['username'],
-        email=data['email'],
-        password=generate_password_hash(data['password']),
-        role=data['role'],
-        parent_id=data.get('parent_id'),
-        teacher_id=data.get('teacher_id')
-    )
-    db.session.add(user)
-    db.session.commit()
-    log_activity(current_user.id, 'add_user', f'Added {data["role"]}: {data["username"]}')
-    return jsonify({'success': True})
+    try:
+        data = request.get_json()
+        user = User(
+            username=data['username'],
+            email=data['email'],
+            password=generate_password_hash(data['password']),
+            role=data['role'],
+            parent_id=data.get('parent_id'),
+            teacher_id=data.get('teacher_id')
+        )
+        user.save()
+        log_activity(current_user.id, 'add_user', f'Added {data["role"]}: {data["username"]}')
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/admin/users/<int:user_id>', methods=['GET'])
+@app.route('/admin/users/<user_id>', methods=['GET'])
 @login_required
 def admin_get_user(user_id):
     if current_user.role != 'admin':
         return jsonify({'error': 'Access denied'}), 403
-    user = User.query.get_or_404(user_id)
+    user = User.objects(id=user_id).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
     return jsonify({
-        'id': user.id,
+        'id': str(user.id),
         'username': user.username,
         'email': user.email,
         'role': user.role,
-        'parent_id': user.parent_id
+        'parent_id': str(user.parent_id) if user.parent_id else None
     })
 
-@app.route('/admin/users/<int:user_id>/edit', methods=['PUT'])
+@app.route('/admin/users/<user_id>/edit', methods=['PUT'])
 @login_required
 @role_required('admin')
 def admin_edit_user(user_id):
-    user = User.query.get_or_404(user_id)
-    data = request.get_json()
-    user.username = data.get('username', user.username)
-    user.email = data.get('email', user.email)
-    user.teacher_id = data.get('teacher_id', user.teacher_id)
-    user.parent_id = data.get('parent_id', user.parent_id)
-    if data.get('password'):
-        user.password = generate_password_hash(data['password'])
-    db.session.commit()
-    log_activity(current_user.id, 'edit_user', f'Edited user: {user.username}')
-    return jsonify({'success': True})
+    try:
+        user = User.objects(id=user_id).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        data = request.get_json()
+        user.username = data.get('username', user.username)
+        user.email = data.get('email', user.email)
+        user.teacher_id = data.get('teacher_id', user.teacher_id)
+        user.parent_id = data.get('parent_id', user.parent_id)
+        if data.get('password'):
+            user.password = generate_password_hash(data['password'])
+        user.save()
+        log_activity(current_user.id, 'edit_user', f'Edited user: {user.username}')
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/admin/users/<int:user_id>/toggle', methods=['POST'])
+@app.route('/admin/users/<user_id>/toggle', methods=['POST'])
 @login_required
 @role_required('admin')
 def admin_toggle_user(user_id):
-    user = User.query.get_or_404(user_id)
-    user.is_active = not user.is_active
-    db.session.commit()
-    log_activity(current_user.id, 'toggle_user', f'{'Activated' if user.is_active else 'Deactivated'} user: {user.username}')
-    return jsonify({'success': True, 'is_active': user.is_active})
+    try:
+        user = User.objects(id=user_id).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        user.is_active = not user.is_active
+        user.save()
+        status = 'Activated' if user.is_active else 'Deactivated'
+        log_activity(current_user.id, 'toggle_user', f'{status} user: {user.username}')
+        return jsonify({'success': True, 'is_active': user.is_active})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/admin/users/<int:user_id>/delete', methods=['DELETE'])
+@app.route('/admin/users/<user_id>/delete', methods=['DELETE'])
 @login_required
 @role_required('admin')
 def admin_delete_user(user_id):
-    user = User.query.get_or_404(user_id)
-    username = user.username
-    db.session.delete(user)
-    db.session.commit()
-    log_activity(current_user.id, 'delete_user', f'Deleted user: {username}')
-    return jsonify({'success': True})
+    try:
+        user = User.objects(id=user_id).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        username = user.username
+        user.delete()
+        log_activity(current_user.id, 'delete_user', f'Deleted user: {username}')
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/admin/logs')
 @login_required
 @role_required('admin')
 def admin_logs():
-    role = request.args.get('role')
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    
-    query = UserLog.query
-    if role:
-        user_ids = [u.id for u in User.query.filter_by(role=role).all()]
-        query = query.filter(UserLog.user_id.in_(user_ids))
-    if start_date:
-        query = query.filter(UserLog.timestamp >= datetime.strptime(start_date, '%Y-%m-%d'))
-    if end_date:
-        query = query.filter(UserLog.timestamp <= datetime.strptime(end_date, '%Y-%m-%d'))
-    
-    logs = query.order_by(UserLog.timestamp.desc()).all()
-    return jsonify([{
-        'id': log.id,
-        'username': log.user.username,
-        'role': log.user.role,
-        'action': log.action,
-        'details': log.details,
-        'ip_address': log.ip_address,
-        'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S')
-    } for log in logs])
+    try:
+        role = request.args.get('role')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        query_filter = {}
+        if role:
+            user_ids = [str(u.id) for u in User.objects(role=role)]
+            query_filter['user_id__in'] = user_ids
+        if start_date:
+            query_filter['timestamp__gte'] = datetime.strptime(start_date, '%Y-%m-%d')
+        if end_date:
+            query_filter['timestamp__lte'] = datetime.strptime(end_date, '%Y-%m-%d')
+        
+        logs = list(UserLog.objects(**query_filter).order_by('-timestamp'))
+        return jsonify([{
+            'id': str(log.id),
+            'user_id': log.user_id,
+            'action': log.action,
+            'details': log.details,
+            'ip_address': log.ip_address,
+            'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        } for log in logs])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/admin/report/pdf')
 @login_required
@@ -716,18 +741,16 @@ def admin_report_pdf():
         elements.append(title)
         elements.append(Spacer(1, 0.3*inch))
         
-        data = [['Username', 'Email', 'Role', 'Status', 'Parent Email', 'Created']]
-        for user in User.query.all():
+        data = [['Username', 'Email', 'Role', 'Status']]
+        for user in User.objects():
             data.append([
                 user.username,
                 user.email,
                 user.role.capitalize(),
-                'Active' if user.is_active else 'Inactive',
-                user.parent_email or 'N/A',
-                user.created_at.strftime('%Y-%m-%d')
+                'Active' if user.is_active else 'Inactive'
             ])
         
-        table = Table(data, colWidths=[1.2*inch, 1.8*inch, 0.8*inch, 0.8*inch, 1.5*inch, 1*inch])
+        table = Table(data, colWidths=[1.5*inch, 2*inch, 1*inch, 1*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#D96432')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -753,97 +776,119 @@ def admin_report_pdf():
 @login_required
 @role_required('admin')
 def admin_report_csv():
-    output = StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['Username', 'Email', 'Role', 'Active', 'Parent Email', 'Created At'])
-    for user in User.query.all():
-        writer.writerow([user.username, user.email, user.role, user.is_active, user.parent_email or 'N/A', user.created_at])
-    
-    response = Response(output.getvalue(), mimetype='text/csv')
-    response.headers['Content-Disposition'] = f'attachment; filename=SignBridge_Users_Report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-    return response
+    try:
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Username', 'Email', 'Role', 'Active'])
+        for user in User.objects():
+            writer.writerow([user.username, user.email, user.role, user.is_active])
+        
+        response = Response(output.getvalue(), mimetype='text/csv')
+        response.headers['Content-Disposition'] = f'attachment; filename=SignBridge_Users_Report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Teacher Routes
 @app.route('/teacher/students')
 @login_required
 @role_required('teacher')
 def teacher_students():
-    students = User.query.filter_by(role='student', teacher_id=current_user.id).all()
-    return jsonify([{'id': s.id, 'username': s.username, 'email': s.email} for s in students])
+    try:
+        students = list(User.objects(role='student', teacher_id=str(current_user.id)))
+        return jsonify([{'id': str(s.id), 'username': s.username, 'email': s.email} for s in students])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/teacher/attendance', methods=['POST'])
 @login_required
 @role_required('teacher')
 def teacher_mark_attendance():
-    data = request.get_json()
-    attendance = Attendance(
-        student_id=data['student_id'],
-        date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
-        status=data['status'],
-        teacher_id=current_user.id
-    )
-    db.session.add(attendance)
-    db.session.commit()
-    log_activity(current_user.id, 'mark_attendance', f'Marked attendance for student {data["student_id"]}')
-    return jsonify({'success': True})
+    try:
+        data = request.get_json()
+        attendance = Attendance(
+            student_id=data['student_id'],
+            date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
+            status=data['status'],
+            teacher_id=str(current_user.id)
+        )
+        attendance.save()
+        log_activity(current_user.id, 'mark_attendance', f'Marked attendance for student {data["student_id"]}')
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/teacher/remark', methods=['POST'])
 @login_required
 @role_required('teacher')
 def teacher_add_remark():
-    data = request.get_json()
-    remark = Remark(
-        student_id=data['student_id'],
-        teacher_id=current_user.id,
-        remark_type=data.get('type', 'general'),
-        content=data['content']
-    )
-    db.session.add(remark)
-    db.session.commit()
-    
-    student = User.query.get(data['student_id'])
-    if student.parent_id:
-        notif = Notification(
-            user_id=student.parent_id,
-            message=f'New remark for {student.username}: {data["content"]}'
+    try:
+        data = request.get_json()
+        remark = Remark(
+            student_id=data['student_id'],
+            teacher_id=str(current_user.id),
+            remark_type=data.get('type', 'general'),
+            content=data['content']
         )
-        db.session.add(notif)
-        db.session.commit()
-    
-    log_activity(current_user.id, 'add_remark', f'Added remark for student {data["student_id"]}')
-    return jsonify({'success': True})
+        remark.save()
+        
+        student = User.objects(id=data['student_id']).first()
+        if student and student.parent_id:
+            notif = Notification(
+                user_id=str(student.parent_id),
+                message=f'New remark for {student.username}: {data["content"]}'
+            )
+            notif.save()
+        
+        log_activity(current_user.id, 'add_remark', f'Added remark for student {data["student_id"]}')
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Parent Routes
-@app.route('/parent/child/<int:child_id>')
+@app.route('/parent/child/<child_id>')
 @login_required
 @role_required('parent')
 def parent_view_child(child_id):
-    child = User.query.filter_by(id=child_id, parent_id=current_user.id).first_or_404()
-    attendance = Attendance.query.filter_by(student_id=child_id).order_by(Attendance.date.desc()).limit(30).all()
-    remarks = Remark.query.filter_by(student_id=child_id).order_by(Remark.created_at.desc()).all()
-    progress = Progress.query.filter_by(user_id=child_id).all()
-    return jsonify({
-        'child': {'id': child.id, 'username': child.username, 'email': child.email},
-        'attendance': [{'date': a.date.strftime('%Y-%m-%d'), 'status': a.status} for a in attendance],
-        'remarks': [{'content': r.content, 'type': r.remark_type, 'date': r.created_at.strftime('%Y-%m-%d')} for r in remarks],
-        'progress': [{'module': p.module, 'item': p.item, 'score': p.score, 'completed': p.completed} for p in progress]
-    })
+    try:
+        child = User.objects(id=child_id, parent_id=str(current_user.id)).first()
+        if not child:
+            return jsonify({'error': 'Access denied'}), 403
+        attendance = list(Attendance.objects(student_id=child_id).order_by('-date')[:30])
+        remarks = list(Remark.objects(student_id=child_id).order_by('-timestamp'))
+        progress = list(Progress.objects(user_id=child_id))
+        return jsonify({
+            'child': {'id': str(child.id), 'username': child.username, 'email': child.email},
+            'attendance': [{'date': a.date.strftime('%Y-%m-%d'), 'status': a.status} for a in attendance],
+            'remarks': [{'content': r.content, 'type': r.remark_type, 'date': r.timestamp.strftime('%Y-%m-%d')} for r in remarks],
+            'progress': [{'module': p.module, 'item': p.item, 'score': p.score, 'completed': p.completed} for p in progress]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/parent/notifications')
 @login_required
 @role_required('parent')
 def parent_notifications():
-    notifs = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).all()
-    return jsonify([{'id': n.id, 'message': n.message, 'is_read': n.is_read, 'created_at': n.created_at.strftime('%Y-%m-%d %H:%M')} for n in notifs])
+    try:
+        notifs = list(Notification.objects(user_id=str(current_user.id)).order_by('-timestamp'))
+        return jsonify([{'id': str(n.id), 'message': n.message, 'is_read': n.is_read, 'created_at': n.timestamp.strftime('%Y-%m-%d %H:%M')} for n in notifs])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/parent/notifications/<int:notif_id>/read', methods=['POST'])
+@app.route('/parent/notifications/<notif_id>/read', methods=['POST'])
 @login_required
 @role_required('parent')
 def parent_mark_notification_read(notif_id):
-    notif = Notification.query.get_or_404(notif_id)
-    notif.is_read = True
-    db.session.commit()
-    return jsonify({'success': True})
+    try:
+        notif = Notification.objects(id=notif_id).first()
+        if not notif:
+            return jsonify({'error': 'Notification not found'}), 404
+        notif.is_read = True
+        notif.save()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/contact')
 def contact():
@@ -856,37 +901,27 @@ def alert():
 @app.route('/api/risk_stats')
 def risk_stats():
     try:
-        total = User.query.filter_by(role='student', is_active=True).count()
+        total = User.objects(role='student', is_active=True).count()
         
-        at_risk = 0
-        students = User.query.filter_by(role='student', is_active=True).all()
-        for student in students:
-            risks = AIRiskDetector.analyze_student_risk(student.id)
-            if risks:
-                at_risk += 1
+        alerts_today = Alert.objects(timestamp__gte=datetime.now().replace(hour=0, minute=0, second=0)).count()
         
-        alerts_today = Alert.query.filter(
-            Alert.created_at >= datetime.now().replace(hour=0, minute=0, second=0)
+        total_logins_today = UserLog.objects(
+            action='login',
+            timestamp__gte=datetime.now().replace(hour=0, minute=0, second=0)
         ).count()
         
-        # Additional analytics
-        total_logins_today = UserLog.query.filter(
-            UserLog.action == 'login',
-            UserLog.timestamp >= datetime.now().replace(hour=0, minute=0, second=0)
-        ).count()
-        
-        failed_logins_today = UserLog.query.filter(
-            UserLog.action == 'login_failed',
-            UserLog.timestamp >= datetime.now().replace(hour=0, minute=0, second=0)
+        failed_logins_today = UserLog.objects(
+            action='login_failed',
+            timestamp__gte=datetime.now().replace(hour=0, minute=0, second=0)
         ).count()
         
         return jsonify({
             'total_students': total,
-            'at_risk': at_risk,
+            'at_risk': 0,
             'alerts_today': alerts_today,
             'logins_today': total_logins_today,
             'failed_logins_today': failed_logins_today,
-            'risk_percentage': round((at_risk / total * 100) if total > 0 else 0, 1)
+            'risk_percentage': 0
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -894,36 +929,39 @@ def risk_stats():
 @app.route('/api/children_risks')
 @login_required
 def children_risks():
-    if current_user.role != 'parent':
-        return jsonify([])
-    
-    children = User.query.filter_by(role='student', parent_id=current_user.id).all()
-    result = []
-    
-    for child in children:
-        risks = AIRiskDetector.analyze_student_risk(child.id)
+    try:
+        if current_user.role != 'parent':
+            return jsonify([])
         
-        # Get detailed analytics
-        last_login = UserLog.query.filter_by(user_id=child.id, action='login').order_by(UserLog.timestamp.desc()).first()
-        last_login_str = last_login.timestamp.strftime('%Y-%m-%d %H:%M') if last_login else 'Never'
+        children = list(User.objects(role='student', parent_id=str(current_user.id)))
+        result = []
         
-        recent_progress = Progress.query.filter_by(user_id=child.id).order_by(Progress.timestamp.desc()).limit(5).all()
-        avg_score = round(sum([p.score for p in recent_progress]) / len(recent_progress)) if recent_progress else 0
+        for child in children:
+            last_login = UserLog.objects(user_id=str(child.id), action='login').order_by('-timestamp').first()
+            last_login_str = last_login.timestamp.strftime('%Y-%m-%d %H:%M') if last_login else 'Never'
+            
+            recent_progress = list(Progress.objects(user_id=str(child.id)).order_by('-timestamp')[:5])
+            avg_score = round(sum([p.score for p in recent_progress]) / len(recent_progress)) if recent_progress else 0
+            
+            attendance_count = Attendance.objects(
+                student_id=str(child.id),
+                date__gte=datetime.now().date() - timedelta(days=30)
+            ).count()
+            
+            total_activities = Progress.objects(user_id=str(child.id)).count()
+            
+            result.append({
+                'name': child.username,
+                'risks': [],
+                'last_login': last_login_str,
+                'avg_score': avg_score,
+                'attendance_30days': attendance_count,
+                'total_activities': total_activities
+            })
         
-        attendance_count = Attendance.query.filter_by(student_id=child.id).filter(
-            Attendance.date >= datetime.now().date() - timedelta(days=30)
-        ).count()
-        
-        result.append({
-            'name': child.username,
-            'risks': risks,
-            'last_login': last_login_str,
-            'avg_score': avg_score,
-            'attendance_30days': attendance_count,
-            'total_activities': len(Progress.query.filter_by(user_id=child.id).all())
-        })
-    
-    return jsonify(result)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/submit_feedback', methods=['POST'])
 def submit_feedback():
@@ -934,8 +972,7 @@ def submit_feedback():
             email=data.get('email'),
             message=data.get('message')
         )
-        db.session.add(feedback)
-        db.session.commit()
+        feedback.save()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -944,14 +981,17 @@ def submit_feedback():
 @login_required
 @role_required('admin')
 def admin_view_feedback():
-    feedbacks = Feedback.query.order_by(Feedback.created_at.desc()).all()
-    return jsonify([{
-        'id': f.id,
-        'name': f.name,
-        'email': f.email,
-        'message': f.message,
-        'created_at': f.created_at.strftime('%Y-%m-%d %H:%M:%S')
-    } for f in feedbacks])
+    try:
+        feedbacks = list(Feedback.objects().order_by('-timestamp'))
+        return jsonify([{
+            'id': str(f.id),
+            'name': f.name,
+            'email': f.email,
+            'message': f.message,
+            'created_at': f.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        } for f in feedbacks])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 
@@ -960,44 +1000,32 @@ def send_alert():
     try:
         data = request.get_json()
         student_name = "Student"
-        parent_phone = "6374145856"  # Default test number
+        parent_phone = "6374145856"
         
-        # If user is logged in as student
         if current_user.is_authenticated and current_user.role == 'student':
             student_name = current_user.username
-            # Use student's parent phone if available
             if current_user.parent_phone:
                 parent_phone = current_user.parent_phone
             elif current_user.parent_id:
-                parent = User.query.get(current_user.parent_id)
+                parent = User.objects(id=current_user.parent_id).first()
                 if parent and parent.parent_phone:
                     parent_phone = parent.parent_phone
             
             if current_user.parent_id:
                 alert = Alert(
-                    student_id=current_user.id,
-                    parent_id=current_user.parent_id,
+                    student_id=str(current_user.id),
+                    parent_id=str(current_user.parent_id),
                     sign_detected=data.get('sign'),
                     latitude=data.get('latitude'),
                     longitude=data.get('longitude')
                 )
-                db.session.add(alert)
+                alert.save()
                 
                 notif = Notification(
-                    user_id=current_user.parent_id,
+                    user_id=str(current_user.parent_id),
                     message=f'EMERGENCY: {student_name} detected "{data.get("sign")}" sign at location'
                 )
-                db.session.add(notif)
-                db.session.commit()
-        
-        # Send SMS to parent phone
-        sms_result = send_sms_alert(
-            parent_phone,
-            student_name,
-            data.get('sign'),
-            data.get('latitude'),
-            data.get('longitude')
-        )
+                notif.save()
         
         return jsonify({
             'success': True, 
@@ -1012,49 +1040,65 @@ def send_alert():
 @login_required
 @role_required('parent')
 def parent_alerts():
-    alerts = Alert.query.filter_by(parent_id=current_user.id).order_by(Alert.created_at.desc()).all()
-    return jsonify([{
-        'id': a.id,
-        'student': User.query.get(a.student_id).username,
-        'sign': a.sign_detected,
-        'latitude': a.latitude,
-        'longitude': a.longitude,
-        'is_read': a.is_read,
-        'created_at': a.created_at.strftime('%Y-%m-%d %H:%M:%S')
-    } for a in alerts])
+    try:
+        alerts = list(Alert.objects(parent_id=str(current_user.id)).order_by('-timestamp'))
+        result = []
+        for a in alerts:
+            student = User.objects(id=a.student_id).first()
+            result.append({
+                'id': str(a.id),
+                'student': student.username if student else 'Unknown',
+                'sign': a.sign_detected,
+                'latitude': a.latitude,
+                'longitude': a.longitude,
+                'is_read': a.is_read,
+                'created_at': a.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/parent/alerts/<int:alert_id>/read', methods=['POST'])
+@app.route('/parent/alerts/<alert_id>/read', methods=['POST'])
 @login_required
 @role_required('parent')
 def parent_mark_alert_read(alert_id):
-    alert = Alert.query.get_or_404(alert_id)
-    alert.is_read = True
-    db.session.commit()
-    return jsonify({'success': True})
+    try:
+        alert = Alert.objects(id=alert_id).first()
+        if not alert:
+            return jsonify({'error': 'Alert not found'}), 404
+        alert.is_read = True
+        alert.save()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/student/<int:student_id>/progress')
+@app.route('/student/<student_id>/progress')
 @login_required
 def student_progress_details(student_id):
-    # Check if user is parent of this student or admin
-    student = User.query.get_or_404(student_id)
-    if current_user.role == 'parent' and student.parent_id != current_user.id:
-        return "Access denied", 403
-    if current_user.role not in ['parent', 'admin', 'teacher']:
-        return "Access denied", 403
-    
-    progress = Progress.query.filter_by(user_id=student_id).order_by(Progress.timestamp.desc()).all()
-    attendance = Attendance.query.filter_by(student_id=student_id).order_by(Attendance.date.desc()).limit(30).all()
-    remarks = Remark.query.filter_by(student_id=student_id).order_by(Remark.created_at.desc()).all()
-    
-    stats = {
-        'total': len(progress),
-        'completed': len([p for p in progress if p.completed]),
-        'avg_score': round(sum([p.score for p in progress]) / len(progress)) if progress else 0,
-        'quizzes': len([p for p in progress if p.module == 'quiz']),
-        'videos_watched': len([p for p in progress if p.module == 'video'])
-    }
-    
-    return render_template('student_progress_details.html', student=student, progress=progress, stats=stats, attendance=attendance, remarks=remarks)
+    try:
+        student = User.objects(id=student_id).first()
+        if not student:
+            return jsonify({'error': 'Student not found'}), 404
+        if current_user.role == 'parent' and str(student.parent_id) != str(current_user.id):
+            return jsonify({'error': 'Access denied'}), 403
+        if current_user.role not in ['parent', 'admin', 'teacher']:
+            return jsonify({'error': 'Access denied'}), 403
+        
+        progress = list(Progress.objects(user_id=student_id).order_by('-timestamp'))
+        attendance = list(Attendance.objects(student_id=student_id).order_by('-date')[:30])
+        remarks = list(Remark.objects(student_id=student_id).order_by('-timestamp'))
+        
+        stats = {
+            'total': len(progress),
+            'completed': len([p for p in progress if p.completed]),
+            'avg_score': round(sum([p.score for p in progress]) / len(progress)) if progress else 0,
+            'quizzes': len([p for p in progress if p.module == 'quiz']),
+            'videos_watched': len([p for p in progress if p.module == 'video'])
+        }
+        
+        return render_template('student_progress_details.html', student=student, progress=progress, stats=stats, attendance=attendance, remarks=remarks)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
