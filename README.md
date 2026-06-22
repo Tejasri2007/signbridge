@@ -280,13 +280,3 @@ Conclusion
 SignBridge serves as an effective communication and learning platform that promotes inclusivity through sign language technology. By integrating speech recognition, video processing, cloud storage, and educational tools, the system contributes to accessible communication and digital learning.
 
 ---
-
-Developer
-
-Tejasri
-
----
-
-License
-
-This project is developed for educational and academic purposes.
