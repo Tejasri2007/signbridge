@@ -17,8 +17,7 @@ System Architecture
 
 ## System Architecture
 
-![System Architecture](images/system-architecture.png.jpeg)
-
+<img src="./images/system-architecture.png.jpeg" alt="System Architecture" width="1000"/>
 Architecture Description
 
 The SignBridge system follows a multi-layer architecture consisting of:
@@ -40,8 +39,7 @@ Workflow Diagram
 
 ## Workflow Diagram
 
-![Workflow Diagram](images/workflow.png.jpeg)
-
+<img src="./images/workflow.png.jpeg" alt="Workflow Diagram" width="1000"/>
 Workflow Description
 
 1. User records or uploads audio.
