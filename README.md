@@ -1,35 +1,13 @@
-# Sign Language Converter Web App
+# SignBridge
 
-## Features
-✅ Record audio or upload audio files
-✅ Automatic speech-to-sign conversion
-✅ Continuous video playback (loops automatically)
-✅ Upload new sign videos from web interface
-✅ View all available sign videos
+## System Architecture
 
-## Setup
+![System Architecture](cnn.png)
 
-1. Install dependencies:
-```
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm
-```
+## Workflow
 
-2. Run the app:
-```
-python app.py
-```
+![Workflow](ss.png)
 
-3. Open browser: http://localhost:5000
+## AI-Powered Sign Language Learning & Communication Platform
 
-## Usage
-
-1. **Record Audio**: Click "Start Recording" → speak → "Stop Recording"
-2. **Upload Audio**: Choose audio file → click "Upload Audio"
-3. **Add Videos**: Enter word → select video file → click "Upload Video"
-4. Videos will play continuously in a loop automatically
-
-## Folder Structure
-- `sign_videos/` - Sign language video files (WORD.mp4)
-- `audio_uploads/` - Temporary audio files
-- `templates/` - HTML interface
+SignBridge is an AI-powered web platform that helps deaf and hard-of-hearing learners communicate and learn sign language through interactive videos and speech-to-sign conversion.
