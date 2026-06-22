@@ -6,6 +6,9 @@
     <style>
         .container { max-width: 1400px; }
         .log-entry { border-left-color: #D9A036; }
+        .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; }
+        .modal-content button { margin: 5px; }
     </style>
 </head>
 <body>
@@ -25,16 +28,17 @@
         </div>
 
         <div class="tabs">
-            <div class="tab active" onclick="showTab('users')">Users</div>
-            <div class="tab" onclick="showTab('activities')">Student Activities</div>
-            <div class="tab" onclick="showTab('logs')">Activity Logs</div>
-            <div class="tab" onclick="showTab('feedback')">Feedback</div>
+            <div class="tab active" onclick="showTab(event, 'users')">Users</div>
+            <div class="tab" onclick="showTab(event, 'activities')">Activities</div>
+            <div class="tab" onclick="showTab(event, 'logs')">Logs</div>
+            <div class="tab" onclick="showTab(event, 'feedback')">Feedback</div>
         </div>
 
         <div id="users-tab" class="card">
             <h2>User Management</h2>
             <button onclick="openAddUserModal()">Add User</button>
             <a href="/admin/report/pdf" download><button>Download PDF Report</button></a>
+            <a href="/admin/report/csv" download><button>Download CSV Report</button></a>
             <table>
                 <tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
                 {% for user in users %}
@@ -56,7 +60,7 @@
         <div id="activities-tab" class="card" style="display:none;">
             <h2>Student Activities & Progress</h2>
             <table>
-                <tr><th>Student</th><th>Module</th><th>Activity</th><th>Score</th><th>Status</th><th>Date</th></tr>
+                <tr><th>User ID</th><th>Module</th><th>Activity</th><th>Score</th><th>Status</th><th>Date</th></tr>
                 {% for progress in all_progress %}
                 <tr>
                     <td>{{ progress.user_id }}</td>
@@ -87,7 +91,7 @@
                 {% for log in recent_logs %}
                 <div class="log-entry">
                     <strong>{{ log.user_id }}</strong> - {{ log.action }}<br>
-                    <small>{{ log.timestamp }} | IP: {{ log.ip_address }}</small><br>
+                    <small>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} | IP: {{ log.ip_address }}</small><br>
                     {% if log.details %}<em>{{ log.details }}</em>{% endif %}
                 </div>
                 {% endfor %}
@@ -114,7 +118,7 @@
                 <option value="parent">Parent</option>
                 <option value="admin">Admin</option>
             </select>
-            <div id="parentSelector" style="display:none;">
+            <div id="parentSelector" style="display:block;">
                 <select id="parentId">
                     <option value="">No Parent</option>
                     {% for parent in parents %}
@@ -130,7 +134,7 @@
     <script>
         let editingUserId = null;
 
-        function showTab(tab) {
+        function showTab(event, tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             event.target.classList.add('active');
             document.getElementById('users-tab').style.display = tab === 'users' ? 'block' : 'none';
@@ -141,28 +145,6 @@
             if (tab === 'feedback') {
                 loadFeedback();
             }
-        }
-
-        function loadFeedback() {
-            fetch('/admin/feedback')
-                .then(res => res.json())
-                .then(feedbacks => {
-                    const container = document.getElementById('feedbackContainer');
-                    if (feedbacks.length === 0) {
-                        container.innerHTML = '<p>No feedback received yet.</p>';
-                    } else {
-                        container.innerHTML = feedbacks.map(f => `
-                            <div class="log-entry" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-                                <strong>${f.name}</strong> (${f.email})<br>
-                                <small>${f.created_at}</small><br>
-                                <p style="margin-top: 10px;">${f.message}</p>
-                            </div>
-                        `).join('');
-                    }
-                })
-                .catch(err => {
-                    document.getElementById('feedbackContainer').innerHTML = '<p>Error loading feedback.</p>';
-                });
         }
 
         function openAddUserModal() {
@@ -201,7 +183,7 @@
             
             if (data.role === 'student') {
                 const parentId = document.getElementById('parentId').value;
-                if (parentId) data.parent_id = parseInt(parentId);
+                if (parentId) data.parent_id = parentId;
             }
             
             const url = editingUserId ? `/admin/users/${editingUserId}/edit` : '/admin/users/add';
@@ -211,15 +193,16 @@
                 method: method,
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(data)
-            }).then(res => res.json()).then(data => {
-                if (data.success) {
+            }).then(res => res.json()).then(result => {
+                if (result.success) {
                     closeModal();
                     location.reload();
                 } else {
-                    alert(data.error || 'Failed to save user');
+                    alert(result.error || 'Failed to save user');
                 }
             }).catch(err => {
                 alert('Error: ' + err.message);
+                console.error(err);
             });
         }
 
@@ -232,13 +215,15 @@
             document.getElementById('password').placeholder = 'Leave blank to keep current password';
             
             fetch(`/admin/users/${userId}`)
-                .then(res => res.json())
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to load user');
+                    return res.json();
+                })
                 .then(user => {
                     document.getElementById('username').value = user.username;
                     document.getElementById('email').value = user.email;
                     document.getElementById('role').value = user.role;
                     
-                    // Show parent selector if student
                     if (user.role === 'student') {
                         document.getElementById('parentSelector').style.display = 'block';
                         document.getElementById('parentId').value = user.parent_id || '';
@@ -250,21 +235,59 @@
                 })
                 .catch(err => {
                     alert('Error loading user: ' + err.message);
+                    console.error(err);
                 });
         }
 
         function toggleUser(userId) {
             fetch(`/admin/users/${userId}/toggle`, {method: 'POST'})
                 .then(res => res.json())
-                .then(data => { if (data.success) location.reload(); });
+                .then(data => { 
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert(data.error || 'Failed to toggle user');
+                    }
+                })
+                .catch(err => alert('Error: ' + err.message));
         }
 
         function deleteUser(userId) {
             if (confirm('Delete this user?')) {
                 fetch(`/admin/users/${userId}/delete`, {method: 'DELETE'})
                     .then(res => res.json())
-                    .then(data => { if (data.success) location.reload(); });
+                    .then(data => { 
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            alert(data.error || 'Failed to delete user');
+                        }
+                    })
+                    .catch(err => alert('Error: ' + err.message));
             }
+        }
+
+        function loadFeedback() {
+            fetch('/admin/feedback')
+                .then(res => res.json())
+                .then(feedbacks => {
+                    const container = document.getElementById('feedbackContainer');
+                    if (!feedbacks || feedbacks.length === 0) {
+                        container.innerHTML = '<p>No feedback received yet.</p>';
+                    } else {
+                        container.innerHTML = feedbacks.map(f => `
+                            <div class="log-entry" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                                <strong>${f.name}</strong> (${f.email})<br>
+                                <small>${f.created_at}</small><br>
+                                <p style="margin-top: 10px;">${f.message}</p>
+                            </div>
+                        `).join('');
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    document.getElementById('feedbackContainer').innerHTML = '<p>Error loading feedback.</p>';
+                });
         }
 
         function filterLogs() {
@@ -276,7 +299,7 @@
                 .then(res => res.json())
                 .then(logs => {
                     const container = document.getElementById('logsContainer');
-                    if (logs.length === 0) {
+                    if (!logs || logs.length === 0) {
                         container.innerHTML = '<p>No logs found.</p>';
                     } else {
                         container.innerHTML = logs.map(log => `
@@ -290,6 +313,7 @@
                 })
                 .catch(err => {
                     console.error(err);
+                    document.getElementById('logsContainer').innerHTML = '<p>Error loading logs.</p>';
                 });
         }
     </script>

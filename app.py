@@ -620,8 +620,8 @@ def admin_add_user():
             email=data['email'],
             password=generate_password_hash(data['password']),
             role=data['role'],
-            parent_id=data.get('parent_id'),
-            teacher_id=data.get('teacher_id')
+            parent_id=str(data.get('parent_id')) if data.get('parent_id') else None,
+            teacher_id=str(data.get('teacher_id')) if data.get('teacher_id') else None
         )
         user.save()
         log_activity(current_user.id, 'add_user', f'Added {data["role"]}: {data["username"]}')
@@ -656,8 +656,8 @@ def admin_edit_user(user_id):
         data = request.get_json()
         user.username = data.get('username', user.username)
         user.email = data.get('email', user.email)
-        user.teacher_id = data.get('teacher_id', user.teacher_id)
-        user.parent_id = data.get('parent_id', user.parent_id)
+        user.teacher_id = str(data.get('teacher_id')) if data.get('teacher_id') else user.teacher_id
+        user.parent_id = str(data.get('parent_id')) if data.get('parent_id') else None
         if data.get('password'):
             user.password = generate_password_hash(data['password'])
         user.save()
