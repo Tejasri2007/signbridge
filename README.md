@@ -15,7 +15,9 @@ The platform supports students, teachers, parents, and administrators through de
 
 System Architecture
 
-"System Architecture" (images/system-architecture.png.jpeg)
+## System Architecture
+
+![System Architecture](images/system-architecture.png.jpeg)
 
 Architecture Description
 
@@ -36,7 +38,9 @@ The frontend communicates with the Flask backend, which processes user requests,
 
 Workflow Diagram
 
-"Workflow Diagram" (images/workflow.png.jpeg)
+## Workflow Diagram
+
+![Workflow Diagram](images/workflow.png.jpeg)
 
 Workflow Description
 
