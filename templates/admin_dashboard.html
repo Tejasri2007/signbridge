@@ -44,9 +44,9 @@
                     <td>{{ user.role }}</td>
                     <td>{{ 'Active' if user.is_active else 'Inactive' }}</td>
                     <td>
-                        <button onclick="editUser({{ user.id }})">Edit</button>
-                        <button onclick="toggleUser({{ user.id }})">{{ 'Deactivate' if user.is_active else 'Activate' }}</button>
-                        <button class="btn-danger" onclick="deleteUser({{ user.id }})">Delete</button>
+                        <button onclick="editUser('{{ user.id }}')">Edit</button>
+                        <button onclick="toggleUser('{{ user.id }}')">{{ 'Deactivate' if user.is_active else 'Activate' }}</button>
+                        <button class="btn-danger" onclick="deleteUser('{{ user.id }}')">Delete</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -59,7 +59,7 @@
                 <tr><th>Student</th><th>Module</th><th>Activity</th><th>Score</th><th>Status</th><th>Date</th></tr>
                 {% for progress in all_progress %}
                 <tr>
-                    <td>{{ progress.user.username }}</td>
+                    <td>{{ progress.user_id }}</td>
                     <td>{{ progress.module }}</td>
                     <td>{{ progress.item }}</td>
                     <td>{{ progress.score }}%</td>
@@ -86,8 +86,8 @@
             <div id="logsContainer">
                 {% for log in recent_logs %}
                 <div class="log-entry">
-                    <strong>{{ log.user.username }}</strong> ({{ log.user.role }}) - {{ log.action }}<br>
-                    <small>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} | IP: {{ log.ip_address }}</small><br>
+                    <strong>{{ log.user_id }}</strong> - {{ log.action }}<br>
+                    <small>{{ log.timestamp }} | IP: {{ log.ip_address }}</small><br>
                     {% if log.details %}<em>{{ log.details }}</em>{% endif %}
                 </div>
                 {% endfor %}
@@ -276,13 +276,20 @@
                 .then(res => res.json())
                 .then(logs => {
                     const container = document.getElementById('logsContainer');
-                    container.innerHTML = logs.map(log => `
-                        <div class="log-entry">
-                            <strong>${log.username}</strong> (${log.role}) - ${log.action}<br>
-                            <small>${log.timestamp} | IP: ${log.ip_address}</small><br>
-                            ${log.details ? `<em>${log.details}</em>` : ''}
-                        </div>
-                    `).join('');
+                    if (logs.length === 0) {
+                        container.innerHTML = '<p>No logs found.</p>';
+                    } else {
+                        container.innerHTML = logs.map(log => `
+                            <div class="log-entry">
+                                <strong>${log.user_id}</strong> - ${log.action}<br>
+                                <small>${log.timestamp} | IP: ${log.ip_address}</small><br>
+                                ${log.details ? `<em>${log.details}</em>` : ''}
+                            </div>
+                        `).join('');
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
                 });
         }
     </script>
